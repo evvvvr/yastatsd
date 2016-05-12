@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+var one = big.NewFloat(1)
+
 type MetricType int
 
 const (
@@ -77,7 +79,6 @@ func (m *Metric) String() string {
 		}
 	}
 
-	one := big.NewFloat(1)
 	sampleValue := big.NewFloat(m.Sampling)
 	sampleString := ""
 

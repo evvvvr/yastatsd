@@ -7,10 +7,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	// "strings"
 	"time"
-	// "github.com/evvvvr/yastatsd/internal/metric"
-	// "github.com/evvvvr/yastatsd/internal/parser"
+
+	"github.com/evvvvr/yastatsd/internal/metric"
+	"github.com/evvvvr/yastatsd/internal/parser"
 )
 
 const MAX_UNPROCESSED_INCOMING_METRICS = 1000
@@ -29,29 +29,35 @@ func main() {
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt)
 
-	incomingMetrics := make(chan string, MAX_UNPROCESSED_INCOMING_METRICS)
+	incomingMetrics := make(chan *metric.Metric, MAX_UNPROCESSED_INCOMING_METRICS)
+	errorsChan := make(chan *error, MAX_UNPROCESSED_INCOMING_METRICS)
 
-	go udpListener(*udpServerAddress, incomingMetrics)
+	go udpListener(*udpServerAddress, incomingMetrics, errorsChan)
 
 	if *tcpServerAddress != "" {
-		go tcpListener(*tcpServerAddress, incomingMetrics)
+		go tcpListener(*tcpServerAddress, incomingMetrics, errorsChan)
 	}
 
-	mainLoop(time.Duration(*flushInterval)*time.Millisecond, incomingMetrics, sigChan)
+	mainLoop(time.Duration(*flushInterval)*time.Millisecond, incomingMetrics, errorsChan, sigChan)
 }
 
-func mainLoop(flushInterval time.Duration, incomingMetrics <-chan string, signal <-chan os.Signal) {
-	metrics := make([]string, 0, 1000)
+func mainLoop(flushInterval time.Duration, incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal) {
+	metrics := make([]*metric.Metric, 0, 1000)
 	flushTicker := time.NewTicker(flushInterval)
+	errorCount := 0
 
 	for {
 		select {
 		case metric := <-incomingMetrics:
 			metrics = append(metrics, metric)
 
+		case <-errors:
+			errorCount += 1
+
 		case <-flushTicker.C:
-			flushMetrics(metrics)
-			metrics = make([]string, 0, 1000)
+			flushMetrics(metrics, errorCount)
+			errorCount = 0
+			metrics = make([]*metric.Metric, 0, 1000)
 
 		case <-signal:
 			log.Print("Shutting down the server")
@@ -60,7 +66,7 @@ func mainLoop(flushInterval time.Duration, incomingMetrics <-chan string, signal
 	}
 }
 
-func udpListener(serverAddress string, incomingMetrics chan<- string) {
+func udpListener(serverAddress string, incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", serverAddress)
 
 	if err != nil {
@@ -77,10 +83,10 @@ func udpListener(serverAddress string, incomingMetrics chan<- string) {
 
 	log.Printf("Listening for UDP connections on %s", udpAddr)
 
-	readMetrics(udpConn, incomingMetrics)
+	readMetrics(udpConn, incomingMetrics, errors)
 }
 
-func tcpListener(serverAddress string, incomingMetrics chan<- string) {
+func tcpListener(serverAddress string, incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", serverAddress)
 
 	if err != nil {
@@ -104,11 +110,11 @@ func tcpListener(serverAddress string, incomingMetrics chan<- string) {
 			log.Fatalf("Error accepting TCP connection: %s", err)
 		}
 
-		go readMetrics(tcpConn, incomingMetrics)
+		go readMetrics(tcpConn, incomingMetrics, errors)
 	}
 }
 
-func readMetrics(src io.ReadCloser, incomingMetrics chan<- string) {
+func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, errorsChan chan<- *error) {
 	defer src.Close()
 
 	buf := make([]byte, MAX_READ_SIZE)
@@ -124,28 +130,20 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- string) {
 			break
 		}
 
-		incoming := buf[:numRead]
-		log.Println("incoming: ", string(incoming))
-		incomingMetrics <- string(incoming)
-		// parseMetrics(string(buf), incomingMetrics)
+		metrics, errors := parser.Parse(string(buf[:numRead]))
+
+		for _, metric := range metrics {
+			incomingMetrics <- metric
+		}
+
+		for _, error := range errors {
+			errorsChan <- &error
+		}
 	}
 }
 
-// func parseMetrics(msg string, incomingMetrics chan<- string) {
-//     for _, msgLine := range strings.Split(msg, "\n") {
-//         metric, err := parser.ParseLine(msgLine)
-
-//         if (err != nil) {
-//             log.Printf("Error reading metric: %s. Line is: %s", err, msgLine)
-//             continue
-//         }
-
-//         incomingMetrics <- metric
-//     }
-// }
-
-func flushMetrics(metrics []string) {
-	log.Println("Flushing metrics")
+func flushMetrics(metrics []*metric.Metric, errorCount int) {
+	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
 
 	for _, metric := range metrics {
 		log.Println(metric)
