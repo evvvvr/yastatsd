@@ -3,7 +3,7 @@ package metric
 import (
 	"fmt"
 	"math/big"
-	"strings"
+	"strconv"
 )
 
 var one = big.NewFloat(1)
@@ -19,16 +19,11 @@ const (
 
 type Operation int
 
-const (
-	NoOperation Operation = iota
-	Add
-	Subtract
-)
-
 type Metric struct {
 	Bucket    string
-	Value     float64
-	Operation Operation
+	StringValue string
+	FloatValue float64
+	DoesGaugeHasOperation bool
 	Type      MetricType
 	Sampling  float64
 }
@@ -42,12 +37,30 @@ func (a *Metric) Equal(b *Metric) bool {
 		return false
 	}
 
-	bigAValue, bigBValue := big.NewFloat(a.Value), big.NewFloat(b.Value)
-	bigASampling, bigBSampling := big.NewFloat(a.Sampling), big.NewFloat(b.Sampling)
+	if a.Type != b.Type {
+		return false
+	}
 
-	return (a.Bucket == b.Bucket) && (bigAValue.Cmp(bigBValue) == 0) &&
-		(a.Operation == b.Operation) && (a.Type == b.Type) &&
-		(bigASampling.Cmp(bigBSampling) == 0)
+	areOperationsEqual := true
+	if (a.Type == Gauge) {
+		areOperationsEqual = a.DoesGaugeHasOperation == b.DoesGaugeHasOperation
+	}
+
+	areValuesEqual := false
+	if (a.Type == Set) {
+		areValuesEqual = a.StringValue == b.StringValue
+	} else {
+		bigAValue, bigBValue := big.NewFloat(a.FloatValue), big.NewFloat(b.FloatValue)
+		areValuesEqual = bigAValue.Cmp(bigBValue) == 0		
+	}
+
+	areSamplingsEqual := true
+	if a.Type == Counter || a.Type == Timer {
+		bigASampling, bigBSampling := big.NewFloat(a.Sampling), big.NewFloat(b.Sampling)
+		areSamplingsEqual = bigASampling.Cmp(bigBSampling) == 0
+	}
+
+	return a.Bucket == b.Bucket && areValuesEqual && areOperationsEqual && areSamplingsEqual		
 }
 
 func (m *Metric) String() string {
@@ -67,26 +80,20 @@ func (m *Metric) String() string {
 		typeString = "s"
 	}
 
-	gaugeOpString := ""
+	valueString := ""
 
-	if m.Type == Gauge && m.Operation != NoOperation {
-		switch m.Operation {
-		case Add:
-			gaugeOpString = "+"
-
-		case Subtract:
-			gaugeOpString = "-"
-		}
+	if (m.Type == Set) {
+		valueString = m.StringValue
+	} else {
+		valueString = strconv.FormatFloat(m.FloatValue, 'f', -1, 64)
 	}
 
-	sampleValue := big.NewFloat(m.Sampling)
 	sampleString := ""
+	sampleValue := big.NewFloat(m.Sampling)
 
-	if one.Cmp(sampleValue) != 0 {
-		sampleString = strings.TrimRight(strings.TrimRight(fmt.Sprintf("|@%f", m.Sampling), "0"), ".")
+	if (m.Type == Counter || m.Type == Timer) && (one.Cmp(sampleValue) != 0) {
+		sampleString = fmt.Sprintf("|@%s", strconv.FormatFloat(m.Sampling, 'f', -1, 64))
 	}
 
-	valueString := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%f", m.Value), "0"), ".")
-
-	return fmt.Sprintf("%s:%s%s|%s%s", m.Bucket, gaugeOpString, valueString, typeString, sampleString)
+	return fmt.Sprintf("%s:%s|%s%s", m.Bucket, valueString, typeString, sampleString)
 }

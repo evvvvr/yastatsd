@@ -155,10 +155,6 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 func flushMetrics(metrics []*metric.Metric, errorCount int) {
 	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
 
-	// for _, metric := range metrics {
-	// 	log.Println(metric)
-	// }
-
 	var buf = bytes.NewBufferString("Counters: ")
 	for bucket, counter := range counters {
 		buf.WriteString(fmt.Sprintf("%s: %s | ", bucket, strconv.FormatFloat(counter, 'f', -1, 64)))
@@ -218,7 +214,7 @@ func processMetric(m *metric.Metric) {
 			counters[m.Bucket] = 0
 		}
 
-		counters[m.Bucket] += m.Value * float64(1/m.Sampling)
+		counters[m.Bucket] += m.FloatValue * float64(1/m.Sampling)
 
 	case metric.Timer:
 		_, exists := timers[m.Bucket]
@@ -227,7 +223,7 @@ func processMetric(m *metric.Metric) {
 			timers[m.Bucket] = make([]float64, 0, 100)
 		}
 
-		timers[m.Bucket] = append(timers[m.Bucket], m.Value)
+		timers[m.Bucket] = append(timers[m.Bucket], m.FloatValue)
 
 		if !exists {
 			timersCount[m.Bucket] = 0
@@ -242,15 +238,10 @@ func processMetric(m *metric.Metric) {
 			gauges[m.Bucket] = 0
 		}
 
-		switch m.Operation {
-		case metric.NoOperation:
-			gauges[m.Bucket] = m.Value
-
-		case metric.Add:
-			gauges[m.Bucket] += m.Value
-
-		case metric.Subtract:
-			gauges[m.Bucket] -= m.Value
+		if m.DoesGaugeHasOperation {
+			gauges[m.Bucket] += m.FloatValue
+		} else {
+			gauges[m.Bucket] = m.FloatValue
 		}
 
 	case metric.Set:
@@ -260,6 +251,6 @@ func processMetric(m *metric.Metric) {
 			sets[m.Bucket] = make(map[string]struct{})
 		}
 
-		sets[m.Bucket][strconv.FormatFloat(m.Value, 'f', -1, 64)] = struct{}{}
+		sets[m.Bucket][m.StringValue] = struct{}{}
 	}
 }

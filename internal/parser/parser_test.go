@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseSingleMetric(t *testing.T) {
-	sampledCounter := metric.Metric{Bucket: "voga", Value: 3, Type: metric.Counter, Sampling: 0.1}
+	sampledCounter := metric.Metric{Bucket: "voga", FloatValue: 3, Type: metric.Counter, Sampling: 0.1}
 
 	metrics, errs := parser.Parse("voga:3|c|@0.1")
 
@@ -24,8 +24,8 @@ func TestParseSingleMetric(t *testing.T) {
 }
 
 func TestParseMultipleMetrics(t *testing.T) {
-	timer := metric.Metric{Bucket: "voga", Value: 3, Type: metric.Timer, Sampling: 1.0}
-	gauge := metric.Metric{Bucket: "vo.ga", Value: 3, Operation: metric.Subtract, Type: metric.Gauge, Sampling: 0.1}
+	timer := metric.Metric{Bucket: "voga", FloatValue: 3, Type: metric.Timer, Sampling: 1.0}
+	gauge := metric.Metric{Bucket: "vo.ga", FloatValue: -3, DoesGaugeHasOperation: true, Type: metric.Gauge, Sampling: 0.1}
 
 	metrics, errs := parser.Parse("voga:3|ms\nvo.ga:-3|g|@0.1\nvo.ga:--3|g|@0.1\nvo.ga:--3|g|@0.1-\n:||@")
 
@@ -39,6 +39,20 @@ func TestParseMultipleMetrics(t *testing.T) {
 
 	compareMetrics(t, &timer, metrics[0])
 	compareMetrics(t, &gauge, metrics[1])
+}
+
+func BenchmarkParse(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		metrics, errs := parser.Parse("voga:3|ms\nvo.ga:-3|g|@0.1\nvo.ga:--3|g|@0.1\nvo.ga:--3|g|@0.1-\n:||@")
+
+		if len(errs) != 3 {
+			b.Fatalf("Wrong count of parsing errors. Expected: %d, Actual: %d", 3, len(errs))
+		}
+
+		if len(metrics) != 2 {
+			b.Fatalf("Wrong count of parsed metrics. Expected: %d, Actual: %d", 2, len(metrics))
+		}
+	}
 }
 
 func compareMetrics(t *testing.T, expected, parsed *metric.Metric) {

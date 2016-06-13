@@ -7,10 +7,10 @@ import (
 )
 
 func TestEqual(t *testing.T) {
-	metricA := metric.Metric{Bucket: "test", Value: 9.8, Type: metric.Counter, Sampling: 1}
-	metricB := metric.Metric{Bucket: "test", Value: 9.8, Type: metric.Counter, Sampling: 1}
-	metricC := metric.Metric{Bucket: "test", Value: 9.8, Type: metric.Counter, Sampling: 1}
-	metricD := metric.Metric{Bucket: "test2", Value: 9.8, Type: metric.Gauge, Sampling: 1}
+	metricA := metric.Metric{Bucket: "test", FloatValue: 9.8, Type: metric.Counter, Sampling: 1}
+	metricB := metric.Metric{Bucket: "test", FloatValue: 9.8, Type: metric.Counter, Sampling: 1}
+	metricC := metric.Metric{Bucket: "test", FloatValue: 9.8, Type: metric.Counter, Sampling: 1}
+	metricD := metric.Metric{Bucket: "test2", FloatValue: 9.8, Type: metric.Gauge, Sampling: 1}
 
 	if metricA.Equal(nil) {
 		t.Error("Metric can't be equal to nil")
@@ -38,12 +38,12 @@ func TestEqual(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-	sampledTimer := metric.Metric{Bucket: "vo.ga", Value: 2.71828, Type: metric.Timer, Sampling: 0.5}
+	sampledTimer := metric.Metric{Bucket: "vo.ga", FloatValue: 2.71828, Type: metric.Timer, Sampling: 0.5}
 	sampledTimerExpectedString := "vo.ga:2.71828|ms|@0.5"
 
 	compareMetricStrings(t, sampledTimerExpectedString, &sampledTimer)
 
-	gauge := metric.Metric{Bucket: "test", Value: 3000, Operation: metric.Subtract, Type: metric.Gauge, Sampling: 1}
+	gauge := metric.Metric{Bucket: "test", FloatValue: -3000, DoesGaugeHasOperation: true, Type: metric.Gauge, Sampling: 1}
 	gaugeExpectedString := "test:-3000|g"
 
 	compareMetricStrings(t, gaugeExpectedString, &gauge)

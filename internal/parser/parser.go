@@ -2,15 +2,11 @@ package parser
 
 import (
 	"errors"
-	"math"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/evvvvr/yastatsd/internal/metric"
 )
-
-var metricRegexp = regexp.MustCompile("^([[:alnum:]]|.+):(([+-])?\\d+\\.?\\d*)\\|([c|g|s]|ms)(?:\\|@([+-]?\\d+\\.?\\d*))?$")
 
 func Parse(input string) ([]*metric.Metric, []error) {
 	metrics := make([]*metric.Metric, 0, 1307)
@@ -30,18 +26,26 @@ func Parse(input string) ([]*metric.Metric, []error) {
 }
 
 func parseLine(line string) (*metric.Metric, error) {
-	submatches := metricRegexp.FindStringSubmatch(line)
-
-	if submatches == nil {
-		return nil, errors.New("Wrong metric format")
+	if len(line) < 5 {
+		return nil, errors.New("Metric string is too short")
 	}
 
-	bucket := submatches[1]
+	metricParts := strings.Split(line, ":")
 
-	value, _ := strconv.ParseFloat(submatches[2], 64)
+	if len(metricParts) < 2 || len(metricParts[0]) == 0 || len(metricParts[1]) == 0 {
+		return nil, errors.New("Invalid metric string format")
+	}
+
+	metricBucket := metricParts[0]
+	moreMetricParts := strings.Split(metricParts[1], "|")
+
+	if len(moreMetricParts) < 2 || len(moreMetricParts[0]) == 0 || len(moreMetricParts[1]) == 0 {
+		return nil, errors.New("Invalid metric string format")
+	}
 
 	metricType := metric.Counter
-	switch submatches[4] {
+
+	switch moreMetricParts[1] {
 	case "c":
 		metricType = metric.Counter
 
@@ -53,25 +57,45 @@ func parseLine(line string) (*metric.Metric, error) {
 
 	case "s":
 		metricType = metric.Set
+
+	default:
+		return nil, errors.New("Invalid metric type") 
 	}
 
-	operation := metric.NoOperation
-	if metricType == metric.Gauge && submatches[3] != "" {
-		switch submatches[3] {
-		case "+":
-			operation = metric.Add
+	metricValue := moreMetricParts[0]
+	doesGaugeHasOperation := false
+	var err error
+	var metricStringValue string
+	var metricFloatValue float64
 
-		case "-":
-			operation = metric.Subtract
+	if (metricType == metric.Set) {
+		metricStringValue = metricValue
+	} else {
+		if metricType == metric.Gauge {
+			if strings.HasPrefix(metricValue, "+") || strings.HasPrefix(metricValue, "-") {
+				doesGaugeHasOperation = true
+			}
+		} 
+
+		metricFloatValue, err = strconv.ParseFloat(metricValue, 64)
+
+		if err != nil {
+			return nil, errors.New("Invalid metric value format") 
+		}
+	}
+
+	metricSampling := 1.0
+	if (metricType == metric.Counter || metricType == metric.Timer) && (len(moreMetricParts) == 3) {
+		if len(moreMetricParts[2]) < 2 && !strings.HasPrefix(moreMetricParts[2], "@") {
+			return nil,  errors.New("Invalid metric sampling format") 
 		}
 
-		value = math.Abs(value)
+		metricSampling, err = strconv.ParseFloat(moreMetricParts[2][1:], 64) 
+
+		if err != nil {
+			return nil, errors.New("Invalid metric sampling value format") 
+		}
 	}
 
-	sampling := 1.0
-	if submatches[5] != "" {
-		sampling, _ = strconv.ParseFloat(submatches[5], 64)
-	}
-
-	return &metric.Metric{Bucket: bucket, Value: value, Operation: operation, Type: metricType, Sampling: sampling}, nil
+	return &metric.Metric{Bucket: metricBucket, StringValue: metricStringValue, FloatValue: metricFloatValue, Type: metricType, DoesGaugeHasOperation: doesGaugeHasOperation, Sampling: metricSampling}, nil
 }
