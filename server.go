@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/evvvvr/yastatsd/internal/metric"
@@ -21,6 +22,7 @@ const MAX_READ_SIZE = 65535
 const DEFAULT_UDP_ADDRESS = ":8125"
 const DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
 
+var errorCount = 0
 var counters = make(map[string]float64)
 var timers = make(map[string][]float64)
 var timersCount = make(map[string]float64)
@@ -32,6 +34,7 @@ func main() {
 	tcpServerAddress := flag.String("tcpAddr", "", "TCP server address")
 	flushInterval := flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
+	debug := flag.Bool("debug", false, "Should print metric values on flush")
 
 	flag.Parse()
 
@@ -47,27 +50,28 @@ func main() {
 		go tcpListener(*tcpServerAddress, incomingMetrics, errorsChan)
 	}
 
-	mainLoop(time.Duration(*flushInterval)*time.Millisecond, incomingMetrics, errorsChan, sigChan)
+	mainLoop(time.Duration(*flushInterval)*time.Millisecond, incomingMetrics, errorsChan, sigChan, *debug)
 }
 
-func mainLoop(flushInterval time.Duration, incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal) {
-	metrics := make([]*metric.Metric, 0, 1000)
+func mainLoop(flushInterval time.Duration, incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal, debug bool) {
 	flushTicker := time.NewTicker(flushInterval)
-	errorCount := 0
 
 	for {
 		select {
 		case metric := <-incomingMetrics:
 			processMetric(metric)
-			// metrics = append(metrics, metric)
 
 		case <-errors:
-			errorCount += 1
+			errorCount++
 
 		case <-flushTicker.C:
-			flushMetrics(metrics, errorCount)
-			errorCount = 0
-			metrics = make([]*metric.Metric, 0, 1000)
+			flushMetrics(errorCount)
+
+			if debug {
+				outputMetricsForDebug()
+			}
+
+			resetMetrics()
 
 		case <-signal:
 			log.Print("Shutting down the server")
@@ -152,52 +156,64 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 	}
 }
 
-func flushMetrics(metrics []*metric.Metric, errorCount int) {
+func flushMetrics(errorCount int) {
 	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
+}
 
+func outputMetricsForDebug() {
 	var buf = bytes.NewBufferString("Counters: ")
+
+	countersStrings := make([]string, 0, len(counters))
 	for bucket, counter := range counters {
-		buf.WriteString(fmt.Sprintf("%s: %s | ", bucket, strconv.FormatFloat(counter, 'f', -1, 64)))
+		counterString := fmt.Sprintf("%s: %s", bucket, strconv.FormatFloat(counter, 'f', -1, 64))
+
+		countersStrings = append(countersStrings, counterString)
 	}
 
-	log.Printf("%s\n", buf.String())
+	buf.WriteString(strings.Join(countersStrings, ", "))
 
-	buf = bytes.NewBufferString("Timers: ")
+	buf.WriteString("\nTimers: ")
+	timersStrings := make([]string, 0, len(timers))
 	for bucket, timer := range timers {
-		buf.WriteString(fmt.Sprintf("%s: ", bucket))
+		timerBuf := bytes.NewBufferString(fmt.Sprintf("%s: ", bucket))
+
+		timerStrings := make([]string, 0, len(timer))
 
 		for _, val := range timer {
-			buf.WriteString(fmt.Sprintf("%s ", strconv.FormatFloat(val, 'f', -1, 64)))
+			timerStrings = append(timerStrings, strconv.FormatFloat(val, 'f', -1, 64))
 		}
 
-		buf.WriteString(fmt.Sprintf("@%s", strconv.FormatFloat(timersCount[bucket], 'f', -1, 64)))
+		timerBuf.WriteString(strings.Join(timerStrings, ", "))
+		timerBuf.WriteString(fmt.Sprintf(" @%s", strconv.FormatFloat(timersCount[bucket], 'f', -1, 64)))
 
-		buf.WriteString(" | ")
+		timersStrings = append(timersStrings, timerBuf.String())
 	}
+	buf.WriteString(strings.Join(timersStrings, "; "))
 
-	log.Printf("%s\n", buf.String())
-
-	buf = bytes.NewBufferString("Gauges: ")
+	buf.WriteString("\nGauges: ")
+	gaugesStrings := make([]string, 0, len(gauges))
 	for bucket, gauge := range gauges {
-		buf.WriteString(fmt.Sprintf("%s: %s | ", bucket, strconv.FormatFloat(gauge, 'f', -1, 64)))
+		gaugesStrings = append(gaugesStrings, fmt.Sprintf("%s: %s", bucket, strconv.FormatFloat(gauge, 'f', -1, 64)))
 	}
+	buf.WriteString(strings.Join(gaugesStrings, ", "))
 
-	log.Printf("%s\n", buf.String())
-
-	buf = bytes.NewBufferString("Sets: ")
-
+	buf.WriteString("\nSets:")
 	for bucket, set := range sets {
-		buf.WriteString(fmt.Sprintf("%s: ", bucket))
+		buf.WriteString(fmt.Sprintf(" %s: ", bucket))
 
-		for val, _ := range set {
-			buf.WriteString(fmt.Sprintf("%s ", val))
+		keys := make([]string, 0, len(set))
+		for key := range set {
+			keys = append(keys, key)
 		}
 
-		buf.WriteString("| ")
+		buf.WriteString(strings.Join(keys, "|"))
 	}
 
-	log.Printf("%s\n", buf.String())
+	fmt.Println(buf.String())
+}
 
+func resetMetrics() {
+	errorCount = 0
 	counters = make(map[string]float64)
 	timers = make(map[string][]float64)
 	timersCount = make(map[string]float64)
