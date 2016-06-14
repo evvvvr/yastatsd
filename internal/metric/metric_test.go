@@ -35,6 +35,13 @@ func TestEqual(t *testing.T) {
 	if metricA.Equal(&metricD) {
 		t.Error("Metrics must be not equal")
 	}
+
+	setA := metric.Metric{Bucket: "test", StringValue: "kooka", FloatValue: 9.8, Type: metric.Set, Sampling: 1}
+	setB := metric.Metric{Bucket: "test", StringValue: "kooka", FloatValue: 0.8, Type: metric.Set, Sampling: 0.2}
+
+	if !setA.Equal(&setB) {
+		t.Error("Set metrics must be equal")
+	}
 }
 
 func TestString(t *testing.T) {
@@ -47,6 +54,11 @@ func TestString(t *testing.T) {
 	gaugeExpectedString := "test:-3000|g"
 
 	compareMetricStrings(t, gaugeExpectedString, &gauge)
+
+	setMetric := metric.Metric{Bucket: "test", StringValue: "kooka", FloatValue: 9.8, Type: metric.Set, Sampling: 1}
+	metricExpectedString := "test:kooka|s"
+
+	compareMetricStrings(t, metricExpectedString, &setMetric)
 }
 
 func compareMetricStrings(t *testing.T, metricExpectedString string, m *metric.Metric) {
