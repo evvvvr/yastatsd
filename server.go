@@ -65,6 +65,8 @@ func mainLoop(flushInterval time.Duration, incomingMetrics <-chan *metric.Metric
 			errorCount++
 
 		case <-flushTicker.C:
+			// Calculate metrics
+
 			flushMetrics(errorCount)
 
 			if debug {
@@ -254,7 +256,7 @@ func processMetric(m *metric.Metric) {
 			gauges[m.Bucket] = 0
 		}
 
-		if m.DoesGaugeHasOperation {
+		if m.DoesGaugeHaveOperation {
 			gauges[m.Bucket] += m.FloatValue
 		} else {
 			gauges[m.Bucket] = m.FloatValue

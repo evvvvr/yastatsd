@@ -23,7 +23,7 @@ type Metric struct {
 	Bucket    string
 	StringValue string
 	FloatValue float64
-	DoesGaugeHasOperation bool
+	DoesGaugeHaveOperation bool
 	Type      MetricType
 	Sampling  float64
 }
@@ -43,7 +43,7 @@ func (a *Metric) Equal(b *Metric) bool {
 
 	areOperationsEqual := true
 	if (a.Type == Gauge) {
-		areOperationsEqual = a.DoesGaugeHasOperation == b.DoesGaugeHasOperation
+		areOperationsEqual = a.DoesGaugeHaveOperation == b.DoesGaugeHaveOperation
 	}
 
 	areValuesEqual := false

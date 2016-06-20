@@ -50,7 +50,7 @@ func TestString(t *testing.T) {
 
 	compareMetricStrings(t, sampledTimerExpectedString, &sampledTimer)
 
-	gauge := metric.Metric{Bucket: "test", FloatValue: -3000, DoesGaugeHasOperation: true, Type: metric.Gauge, Sampling: 1}
+	gauge := metric.Metric{Bucket: "test", FloatValue: -3000, DoesGaugeHaveOperation: true, Type: metric.Gauge, Sampling: 1}
 	gaugeExpectedString := "test:-3000|g"
 
 	compareMetricStrings(t, gaugeExpectedString, &gauge)

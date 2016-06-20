@@ -63,7 +63,7 @@ func parseLine(line string) (*metric.Metric, error) {
 	}
 
 	metricValue := moreMetricParts[0]
-	doesGaugeHasOperation := false
+	DoesGaugeHaveOperation := false
 	var err error
 	var metricStringValue string
 	var metricFloatValue float64
@@ -73,7 +73,7 @@ func parseLine(line string) (*metric.Metric, error) {
 	} else {
 		if metricType == metric.Gauge {
 			if strings.HasPrefix(metricValue, "+") || strings.HasPrefix(metricValue, "-") {
-				doesGaugeHasOperation = true
+				DoesGaugeHaveOperation = true
 			}
 		} 
 
@@ -97,5 +97,5 @@ func parseLine(line string) (*metric.Metric, error) {
 		}
 	}
 
-	return &metric.Metric{Bucket: metricBucket, StringValue: metricStringValue, FloatValue: metricFloatValue, Type: metricType, DoesGaugeHasOperation: doesGaugeHasOperation, Sampling: metricSampling}, nil
+	return &metric.Metric{Bucket: metricBucket, StringValue: metricStringValue, FloatValue: metricFloatValue, Type: metricType, DoesGaugeHaveOperation: DoesGaugeHaveOperation, Sampling: metricSampling}, nil
 }

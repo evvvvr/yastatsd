@@ -25,7 +25,7 @@ func TestParseSingleMetric(t *testing.T) {
 
 func TestParseMultipleMetrics(t *testing.T) {
 	timer := metric.Metric{Bucket: "voga", FloatValue: 3, Type: metric.Timer, Sampling: 1.0}
-	gauge := metric.Metric{Bucket: "vo.ga", FloatValue: -3, DoesGaugeHasOperation: true, Type: metric.Gauge, Sampling: 0.1}
+	gauge := metric.Metric{Bucket: "vo.ga", FloatValue: -3, DoesGaugeHaveOperation: true, Type: metric.Gauge, Sampling: 0.1}
 
 	metrics, errs := parser.Parse("voga:3|ms\nvo.ga:-3|g|@0.1\nvo.ga:--3|g|@0.1\nvo.ga:--3|g|@0.1-\n:||@")
 
