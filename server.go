@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -16,6 +17,39 @@ import (
 	"github.com/evvvvr/yastatsd/internal/metric"
 	"github.com/evvvvr/yastatsd/internal/parser"
 )
+
+type calculatedMetrics struct {
+	Counters map[string]counterData
+	Timers   map[string]timerData
+	Gauges   map[string]float64
+	Sets     map[string]map[string]struct{}
+}
+
+type counterData struct {
+	Value float64
+	Rate  float64
+}
+
+type timerData struct {
+	Points            []float64
+	Lower             float64
+	Upper             float64
+	Count             float64
+	CountPerSecond    float64
+	Sum               float64
+	Mean              float64
+	Median            float64
+	StandardDeviation float64
+	standardDeviation float64
+	PercentilesData   map[float64]percentileData
+}
+
+type percentileData struct {
+	Count int
+	Max   float64
+	Sum   float64
+	Mean  float64
+}
 
 const MAX_UNPROCESSED_INCOMING_METRICS = 1000
 const MAX_READ_SIZE = 65535
@@ -28,11 +62,14 @@ var timers = make(map[string][]float64)
 var timersCount = make(map[string]float64)
 var gauges = make(map[string]float64)
 var sets = make(map[string]map[string]struct{})
+var percentiles = []float64{float64(90)}
+
+var flushInterval *int
 
 func main() {
 	udpServerAddress := flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address")
 	tcpServerAddress := flag.String("tcpAddr", "", "TCP server address")
-	flushInterval := flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
+	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
 	debug := flag.Bool("debug", false, "Should print metric values on flush")
 
@@ -59,13 +96,13 @@ func mainLoop(flushInterval time.Duration, incomingMetrics <-chan *metric.Metric
 	for {
 		select {
 		case metric := <-incomingMetrics:
-			processMetric(metric)
+			saveMetric(metric)
 
 		case <-errors:
 			errorCount++
 
 		case <-flushTicker.C:
-			// Calculate metrics
+			calculateMetrics()
 
 			flushMetrics(errorCount)
 
@@ -158,6 +195,93 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 	}
 }
 
+func calculateMetrics() calculatedMetrics {
+	res := calculatedMetrics{Counters: make(map[string]counterData), Timers: make(map[string]timerData), Gauges: gauges, Sets: sets}
+
+	for bucket, counter := range counters {
+		res.Counters[bucket] = counterData{Value: counter, Rate: counter / float64(*flushInterval / 1000)}
+	}
+
+	for bucket, timer := range timers {
+		points := timer
+
+		if len(points) > 0 {
+			lower := points[0]
+			upper := points[len(points)-1]
+			count := timersCount	[bucket]
+			seen := len(points)
+			countPerSecond := timersCount[bucket] / float64(*flushInterval / 1000)
+
+			sum := float64(0)
+			for _, val := range points {
+				sum += val
+			}
+
+			mean := sum / float64(seen)
+			mid := seen / 2.0
+
+			median := float64(0)
+			if seen%2 == 1 {
+				median = points[mid]
+			} else {
+				median = (points[mid-1] + points[mid]) / 2.0
+			}
+
+			numerator := 0.0
+
+			for _, val := range points {
+				numerator += math.Pow(val-mean, 2.0)
+			}
+
+			standardDeviation := math.Sqrt(numerator / float64(seen))
+
+			percentilesData := make(map[float64]percentileData)
+
+			for _, percentile := range percentiles {
+				pctSum := points[0]
+				pctMean := points[0]
+				pctMax := points[seen-1]
+
+				if len(points) > 1 {
+					pctCount := int(math.Floor(((math.Abs(percentile) / 100.0) * float64(count)) + 0.5))
+
+					if pctCount == 0 {
+						continue
+					}
+
+					if percentile > 0 {
+						pctMax = points[pctCount-1]
+
+						pctSum = 0
+
+						for _, val := range points[:pctCount-1] {
+							pctSum += val
+						}
+					} else {
+						pctMax = points[seen-pctCount]
+
+						pctSum = 0
+						for _, val := range points[seen-pctCount-1:] {
+							pctSum += val
+						}
+					}
+
+					pctMean = pctSum / float64(pctCount)
+
+					percentilesData[percentile] = percentileData{Count: pctCount, Max: pctMax, Sum: pctSum, Mean: pctMean}
+				}
+			}
+
+			//TODO: create func to init new timerData instance
+			res.Timers[bucket] = timerData{Points: points, Lower: lower, Upper: upper, Count: count, CountPerSecond: countPerSecond, Sum: sum, Mean: mean, Median: median, StandardDeviation: standardDeviation, PercentilesData: percentilesData}
+		} else {
+			res.Timers[bucket] = timerData{Points: points}
+		}
+	}
+
+	return res
+}
+
 func flushMetrics(errorCount int) {
 	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
 }
@@ -223,7 +347,7 @@ func resetMetrics() {
 	sets = make(map[string]map[string]struct{})
 }
 
-func processMetric(m *metric.Metric) {
+func saveMetric(m *metric.Metric) {
 	switch m.Type {
 	case metric.Counter:
 		_, exists := counters[m.Bucket]
