@@ -20,12 +20,20 @@ const (
 type Operation int
 
 type Metric struct {
-	Bucket    string
-	StringValue string
-	FloatValue float64
+	Bucket                 string
+	StringValue            string
+	FloatValue             float64
 	DoesGaugeHaveOperation bool
-	Type      MetricType
-	Sampling  float64
+	Type                   MetricType
+	Sampling               float64
+}
+
+type Metrics struct {
+	Counters    map[string]float64
+	Timers      map[string][]float64
+	TimersCount map[string]float64
+	Gauges      map[string]float64
+	Sets        map[string]map[string]struct{}
 }
 
 func (a *Metric) Equal(b *Metric) bool {
@@ -42,16 +50,16 @@ func (a *Metric) Equal(b *Metric) bool {
 	}
 
 	areOperationsEqual := true
-	if (a.Type == Gauge) {
+	if a.Type == Gauge {
 		areOperationsEqual = a.DoesGaugeHaveOperation == b.DoesGaugeHaveOperation
 	}
 
 	areValuesEqual := false
-	if (a.Type == Set) {
+	if a.Type == Set {
 		areValuesEqual = a.StringValue == b.StringValue
 	} else {
 		bigAValue, bigBValue := big.NewFloat(a.FloatValue), big.NewFloat(b.FloatValue)
-		areValuesEqual = bigAValue.Cmp(bigBValue) == 0		
+		areValuesEqual = bigAValue.Cmp(bigBValue) == 0
 	}
 
 	areSamplingsEqual := true
@@ -60,7 +68,7 @@ func (a *Metric) Equal(b *Metric) bool {
 		areSamplingsEqual = bigASampling.Cmp(bigBSampling) == 0
 	}
 
-	return a.Bucket == b.Bucket && areValuesEqual && areOperationsEqual && areSamplingsEqual		
+	return a.Bucket == b.Bucket && areValuesEqual && areOperationsEqual && areSamplingsEqual
 }
 
 func (m *Metric) String() string {
@@ -82,7 +90,7 @@ func (m *Metric) String() string {
 
 	valueString := ""
 
-	if (m.Type == Set) {
+	if m.Type == Set {
 		valueString = m.StringValue
 	} else {
 		valueString = strconv.FormatFloat(m.FloatValue, 'f', -1, 64)

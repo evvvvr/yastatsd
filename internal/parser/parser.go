@@ -59,7 +59,7 @@ func parseLine(line string) (*metric.Metric, error) {
 		metricType = metric.Set
 
 	default:
-		return nil, errors.New("Invalid metric type") 
+		return nil, errors.New("Invalid metric type")
 	}
 
 	metricValue := moreMetricParts[0]
@@ -68,32 +68,32 @@ func parseLine(line string) (*metric.Metric, error) {
 	var metricStringValue string
 	var metricFloatValue float64
 
-	if (metricType == metric.Set) {
+	if metricType == metric.Set {
 		metricStringValue = metricValue
 	} else {
 		if metricType == metric.Gauge {
 			if strings.HasPrefix(metricValue, "+") || strings.HasPrefix(metricValue, "-") {
 				DoesGaugeHaveOperation = true
 			}
-		} 
+		}
 
 		metricFloatValue, err = strconv.ParseFloat(metricValue, 64)
 
 		if err != nil {
-			return nil, errors.New("Invalid metric value format") 
+			return nil, errors.New("Invalid metric value format")
 		}
 	}
 
 	metricSampling := 1.0
 	if (metricType == metric.Counter || metricType == metric.Timer) && (len(moreMetricParts) == 3) {
 		if len(moreMetricParts[2]) < 2 && !strings.HasPrefix(moreMetricParts[2], "@") {
-			return nil,  errors.New("Invalid metric sampling format") 
+			return nil, errors.New("Invalid metric sampling format")
 		}
 
-		metricSampling, err = strconv.ParseFloat(moreMetricParts[2][1:], 64) 
+		metricSampling, err = strconv.ParseFloat(moreMetricParts[2][1:], 64)
 
 		if err != nil {
-			return nil, errors.New("Invalid metric sampling value format") 
+			return nil, errors.New("Invalid metric sampling value format")
 		}
 	}
 
