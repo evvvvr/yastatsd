@@ -60,10 +60,10 @@ func TestTimersCalculation(t *testing.T) {
 		"a.a": map[float64]float64{90: 3.1, -50: 0.5},
 		"a.b": map[float64]float64{90: 0, -50: 1}}
 	expectedPctSums := map[string]map[float64]float64{
-		"a.a": map[float64]float64{90: 1.2, -50: 3.6},
+		"a.a": map[float64]float64{90: 4.3, -50: 3.5999999999999996},
 		"a.b": map[float64]float64{90: 4, -50: 1}}
 	expectedPctMeans := map[string]map[float64]float64{
-		"a.a": map[float64]float64{90: 0.39999999999999997, -50: 1.8},
+		"a.a": map[float64]float64{90: 1.4333333333333333, -50: 1.7999999999999998},
 		"a.b": map[float64]float64{90: 1, -50: 0.5}}
 
 	metrics := metric.Metrics{Timers: timers, TimersCount: timersCount}

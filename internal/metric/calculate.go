@@ -1,6 +1,11 @@
 package metric
 
-import "math"
+import (
+	"math"
+	"math/big"
+)
+
+var bigZero = big.NewFloat(0)
 
 type CalculatedMetrics struct {
 	Counters map[string]CounterData
@@ -35,10 +40,14 @@ type PercentileData struct {
 }
 
 func Calculate(m *Metrics, flushInterval int, percentiles []float64) *CalculatedMetrics {
-	res := CalculatedMetrics{Counters: make(map[string]CounterData), Timers: make(map[string]TimerData), Gauges: m.Gauges, Sets: m.Sets}
+	res := CalculatedMetrics{Counters: make(map[string]CounterData),
+		Timers: make(map[string]TimerData),
+		Gauges: m.Gauges,
+		Sets:   m.Sets}
 
 	for bucket, counter := range m.Counters {
-		res.Counters[bucket] = CounterData{Value: counter, Rate: counter / float64(flushInterval/1000)}
+		res.Counters[bucket] = CounterData{Value: counter,
+			Rate: counter / float64(flushInterval/1000)}
 	}
 
 	for bucket, timer := range m.Timers {
@@ -52,11 +61,13 @@ func Calculate(m *Metrics, flushInterval int, percentiles []float64) *Calculated
 
 			countPerSecond := m.TimersCount[bucket] / float64(flushInterval/1000)
 
-			sum := float64(0)
-			for _, val := range points {
-				sum += val
+			cumulativeValues := []float64{lower}
+			for i := 1; i < seen; i++ {
+				cumulativeValues = append(cumulativeValues,
+					points[i]+cumulativeValues[i-1])
 			}
 
+			sum := cumulativeValues[seen-1]
 			mean := sum / float64(seen)
 			mid := seen / 2
 
@@ -67,7 +78,7 @@ func Calculate(m *Metrics, flushInterval int, percentiles []float64) *Calculated
 				median = (points[mid-1] + points[mid]) / 2.0
 			}
 
-			numerator := 0.0
+			numerator := float64(0)
 
 			for _, val := range points {
 				numerator += math.Pow(val-mean, 2.0)
@@ -83,37 +94,40 @@ func Calculate(m *Metrics, flushInterval int, percentiles []float64) *Calculated
 				pctUpper := points[seen-1]
 
 				if len(points) > 1 {
-					pctCount := int(math.Floor(((math.Abs(percentile) / 100.0) * float64(seen)) + 0.5))
+					pctCount := int(math.Floor(((math.Abs(percentile) /
+						100.0) * float64(seen)) + 0.5))
 
 					if pctCount == 0 {
 						continue
 					}
 
-					if percentile > 0 {
+					if big.NewFloat(percentile).Cmp(bigZero) > 0 {
 						pctUpper = points[pctCount-1]
-
-						pctSum = 0
-
-						for _, val := range points[:pctCount-1] {
-							pctSum += val
-						}
+						pctSum = cumulativeValues[pctCount-1]
 					} else {
 						pctUpper = points[seen-pctCount]
-
-						pctSum = 0
-						for _, val := range points[seen-pctCount:] {
-							pctSum += val
-						}
+						pctSum = cumulativeValues[seen-1] - cumulativeValues[seen-pctCount-1]
 					}
 
 					pctMean = pctSum / float64(pctCount)
 
-					percentilesData[percentile] = PercentileData{Count: pctCount, Upper: pctUpper, Sum: pctSum, Mean: pctMean}
+					percentilesData[percentile] = PercentileData{Count: pctCount,
+						Upper: pctUpper,
+						Sum:   pctSum,
+						Mean:  pctMean}
 				}
 			}
 
-			//TODO: create func to init new timerData instance
-			res.Timers[bucket] = TimerData{Points: points, Lower: lower, Upper: upper, Count: count, CountPerSecond: countPerSecond, Sum: sum, Mean: mean, Median: median, StandardDeviation: standardDeviation, PercentilesData: percentilesData}
+			res.Timers[bucket] = TimerData{Points: points,
+				Lower:             lower,
+				Upper:             upper,
+				Count:             count,
+				CountPerSecond:    countPerSecond,
+				Sum:               sum,
+				Mean:              mean,
+				Median:            median,
+				StandardDeviation: standardDeviation,
+				PercentilesData:   percentilesData}
 		} else {
 			res.Timers[bucket] = TimerData{Points: points}
 		}
