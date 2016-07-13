@@ -1,39 +1,45 @@
 package main
 
 import (
-	// "bytes"
 	"flag"
-	// "fmt"
 	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
-	// "strconv"
-	// "strings"
 	"time"
 
 	"github.com/evvvvr/yastatsd/internal/metric"
 	"github.com/evvvvr/yastatsd/internal/parser"
 )
 
-const MAX_UNPROCESSED_INCOMING_METRICS = 1000
-const MAX_READ_SIZE = 65535
-const DEFAULT_UDP_ADDRESS = ":8125"
-const DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
-const DEFAULT_TIMER_CAPACITY = 100
+const (
+	DEFAULT_UDP_ADDRESS                 = ":8125"
+	MAX_UNPROCESSED_INCOMING_METRICS    = 1000
+	MAX_READ_SIZE                       = 65535
+	DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
+	DEFAULT_TIMER_CAPACITY              = 100
+)
 
-var errorCount = 0
-var metrics = metric.Metrics{Counters: make(map[string]float64), Timers: make(map[string][]float64), TimersCount: make(map[string]float64), Gauges: make(map[string]float64), Sets: make(map[string]map[string]struct{})}
-var percentiles = []float64{90.0}
-var flushInterval *int
+var (
+	udpServerAddress, tcpServerAddress *string
+	flushInterval                      *int
+	debug                              *bool
+	errorCount                         = 0
+	metrics                            = metric.Metrics{Counters: make(map[string]float64),
+		Timers:      make(map[string][]float64),
+		TimersCount: make(map[string]float64),
+		Gauges:      make(map[string]float64),
+		Sets:        make(map[string]map[string]struct{})}
+	percentiles = []float64{90.0}
+)
 
 func main() {
-	udpServerAddress := flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address")
-	tcpServerAddress := flag.String("tcpAddr", "", "TCP server address")
+	udpServerAddress = flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address")
+	tcpServerAddress = flag.String("tcpAddr", "", "TCP server address")
 	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
-	debug := flag.Bool("debug", false, "Should print metric values on flush")
+	debug = flag.Bool("debug", false, "Should print metric values on flush")
 
 	flag.Parse()
 
@@ -43,17 +49,17 @@ func main() {
 	incomingMetrics := make(chan *metric.Metric, MAX_UNPROCESSED_INCOMING_METRICS)
 	errorsChan := make(chan *error, MAX_UNPROCESSED_INCOMING_METRICS)
 
-	go udpListener(*udpServerAddress, incomingMetrics, errorsChan)
+	go udpListener(incomingMetrics, errorsChan)
 
 	if *tcpServerAddress != "" {
-		go tcpListener(*tcpServerAddress, incomingMetrics, errorsChan)
+		go tcpListener(incomingMetrics, errorsChan)
 	}
 
-	mainLoop(*flushInterval, incomingMetrics, errorsChan, sigChan, *debug)
+	mainLoop(incomingMetrics, errorsChan, sigChan)
 }
 
-func mainLoop(flushInterval int, incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal, debug bool) {
-	flushTicker := time.NewTicker(time.Duration(flushInterval) * time.Millisecond)
+func mainLoop(incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal) {
+	flushTicker := time.NewTicker(time.Duration(*flushInterval) * time.Millisecond)
 
 	for {
 		select {
@@ -64,14 +70,14 @@ func mainLoop(flushInterval int, incomingMetrics <-chan *metric.Metric, errors <
 			errorCount++
 
 		case <-flushTicker.C:
-			metric.Calculate(&metrics, flushInterval, percentiles)
+			calculatedMetrics := metric.Calculate(&metrics, *flushInterval, percentiles)
 
-			flushMetrics(errorCount)
+			flushMetrics()
 
-			/*			if debug {
-							outputMetricsForDebug()
-						}
-			*/
+			if *debug {
+				debugPrint(calculatedMetrics)
+			}
+
 			resetMetrics()
 
 		case <-signal:
@@ -81,8 +87,8 @@ func mainLoop(flushInterval int, incomingMetrics <-chan *metric.Metric, errors <
 	}
 }
 
-func udpListener(serverAddress string, incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
-	udpAddr, err := net.ResolveUDPAddr("udp", serverAddress)
+func udpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", *udpServerAddress)
 
 	if err != nil {
 		log.Fatalf("Error resolving UDP server address: %s", err)
@@ -101,8 +107,8 @@ func udpListener(serverAddress string, incomingMetrics chan<- *metric.Metric, er
 	readMetrics(udpConn, incomingMetrics, errors)
 }
 
-func tcpListener(serverAddress string, incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", serverAddress)
+func tcpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", *tcpServerAddress)
 
 	if err != nil {
 		log.Fatalf("Error resolving TCP server address: %s", err)
@@ -157,61 +163,9 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 	}
 }
 
-func flushMetrics(errorCount int) {
+func flushMetrics() {
 	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
 }
-
-// func outputMetricsForDebug() {
-// 	var buf = bytes.NewBufferString("Counters: ")
-
-// 	countersStrings := make([]string, 0, len(counters))
-// 	for bucket, counter := range counters {
-// 		counterString := fmt.Sprintf("%s: %s", bucket, strconv.FormatFloat(counter, 'f', -1, 64))
-
-// 		countersStrings = append(countersStrings, counterString)
-// 	}
-
-// 	buf.WriteString(strings.Join(countersStrings, ", "))
-
-// 	buf.WriteString("\nTimers: ")
-// 	timersStrings := make([]string, 0, len(timers))
-// 	for bucket, timer := range timers {
-// 		timerBuf := bytes.NewBufferString(fmt.Sprintf("%s: ", bucket))
-
-// 		timerStrings := make([]string, 0, len(timer))
-
-// 		for _, val := range timer {
-// 			timerStrings = append(timerStrings, strconv.FormatFloat(val, 'f', -1, 64))
-// 		}
-
-// 		timerBuf.WriteString(strings.Join(timerStrings, ", "))
-// 		timerBuf.WriteString(fmt.Sprintf(" @%s", strconv.FormatFloat(timersCount[bucket], 'f', -1, 64)))
-
-// 		timersStrings = append(timersStrings, timerBuf.String())
-// 	}
-// 	buf.WriteString(strings.Join(timersStrings, "; "))
-
-// 	buf.WriteString("\nGauges: ")
-// 	gaugesStrings := make([]string, 0, len(gauges))
-// 	for bucket, gauge := range gauges {
-// 		gaugesStrings = append(gaugesStrings, fmt.Sprintf("%s: %s", bucket, strconv.FormatFloat(gauge, 'f', -1, 64)))
-// 	}
-// 	buf.WriteString(strings.Join(gaugesStrings, ", "))
-
-// 	buf.WriteString("\nSets:")
-// 	for bucket, set := range sets {
-// 		buf.WriteString(fmt.Sprintf(" %s: ", bucket))
-
-// 		keys := make([]string, 0, len(set))
-// 		for key := range set {
-// 			keys = append(keys, key)
-// 		}
-
-// 		buf.WriteString(strings.Join(keys, "|"))
-// 	}
-
-// 	fmt.Println(buf.String())
-// }
 
 func resetMetrics() {
 	errorCount = 0
