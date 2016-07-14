@@ -30,14 +30,11 @@ func debugPrint(m *metric.CalculatedMetrics) {
 	buf.WriteString("Timers:\n")
 	for _, bucket := range SortMapKeys(m.Timers) {
 		timer := m.Timers[bucket]
-
 		timerBuf := bytes.NewBufferString(fmt.Sprintf("%s: ", bucket))
+		timerPoints := make([]string, len(timer.Points))
 
-		timerPoints := make([]string, 0, len(timer.Points))
-
-		for _, point := range timer.Points {
-			timerPoints = append(timerPoints,
-				strconv.FormatFloat(point, 'f', -1, 64))
+		for i, point := range timer.Points {
+			timerPoints[i] = strconv.FormatFloat(point, 'f', -1, 64)
 		}
 
 		timerPointsStr := fmt.Sprintf("[%s], ", strings.Join(timerPoints, ", "))
@@ -85,7 +82,6 @@ func debugPrint(m *metric.CalculatedMetrics) {
 	for _, bucket := range SortMapKeys(m.Sets) {
 		set := m.Sets[bucket]
 		buf.WriteString(fmt.Sprintf("%s: ", bucket))
-
 		keys := SortMapKeys(set)
 		buf.WriteString(strings.Join(keys, ", ") + "\n")
 	}
