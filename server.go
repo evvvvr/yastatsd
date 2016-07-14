@@ -25,6 +25,10 @@ var (
 	udpServerAddress, tcpServerAddress *string
 	flushInterval                      *int
 	sanitizeBucketNames                *bool
+	deleteCounters                     *bool
+	deleteTimers                       *bool
+	deleteGauges                       *bool
+	deleteSets                         *bool
 	debug                              *bool
 	errorCount                         = 0
 	metrics                            = metric.Metrics{Counters: make(map[string]float64),
@@ -36,13 +40,16 @@ var (
 )
 
 func main() {
-	udpServerAddress = flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address")
+	udpServerAddress = flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address.")
 	tcpServerAddress = flag.String("tcpAddr", "", "TCP server address")
 	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
-	sanitizeBucketNames = flag.Bool("sanitizeBucketNames", false, "Sanitize bucket names")
-	debug = flag.Bool("debug", false, "Print metrics on flush")
-
+	sanitizeBucketNames = flag.Bool("sanitizeBucketNames", true, "Sanitize bucket names")
+	deleteCounters = flag.Bool("deleteCounters", false, "Don't send values for inactive counters, as opposed to sending 0.")
+	deleteTimers = flag.Bool("deleteTimers", false, "Don't send values for inactive timers, as opposed to sending 0.")
+	deleteGauges = flag.Bool("deleteGauges", false, "Sanitize bucket names.")
+	deleteSets = flag.Bool("deleteSets", false, "Don't send values for inactive sets, as opposed to sending 0.")
+	debug = flag.Bool("debug", false, "Print metrics on flush.")
 	flag.Parse()
 
 	sigChan := make(chan os.Signal)
@@ -165,15 +172,6 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 	}
 }
 
-func flushMetrics() {
-	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
-}
-
-func resetMetrics() {
-	errorCount = 0
-	metrics = metric.Metrics{Counters: make(map[string]float64), Timers: make(map[string][]float64), TimersCount: make(map[string]float64), Gauges: make(map[string]float64), Sets: make(map[string]map[string]struct{})}
-}
-
 func saveMetric(m *metric.Metric) {
 	switch m.Type {
 	case metric.Counter:
@@ -221,5 +219,45 @@ func saveMetric(m *metric.Metric) {
 		}
 
 		metrics.Sets[m.Bucket][m.StringValue] = struct{}{}
+	}
+}
+
+func flushMetrics() {
+	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
+}
+
+func resetMetrics() {
+	errorCount = 0
+
+	if *deleteCounters {
+		metrics.Counters = make(map[string]float64)
+	} else {
+		setMetricsToZeroes(metrics.Counters)
+	}
+
+	if *deleteTimers {
+		metrics.Timers = make(map[string][]float64)
+	} else {
+		for bucket, _ := range metrics.Timers {
+			metrics.Timers[bucket] = []float64{}
+		}
+	}
+
+	if *deleteGauges {
+		metrics.Gauges = make(map[string]float64)
+	}
+
+	if *deleteSets {
+		metrics.Sets = make(map[string]map[string]struct{})
+	} else {
+		for bucket, _ := range metrics.Sets {
+			metrics.Sets[bucket] = make(map[string]struct{})
+		}
+	}
+}
+
+func setMetricsToZeroes(m map[string]float64) {
+	for bucket, _ := range m {
+		m[bucket] = 0
 	}
 }
