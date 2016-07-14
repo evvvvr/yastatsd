@@ -8,12 +8,12 @@ import (
 	"github.com/evvvvr/yastatsd/internal/metric"
 )
 
-func Parse(input string) ([]*metric.Metric, []error) {
+func Parse(input string, sanitizeBucketNames bool) ([]*metric.Metric, []error) {
 	metrics := make([]*metric.Metric, 0, 1307)
 	errors := make([]error, 0, 1307)
 
 	for _, line := range strings.Split(input, "\n") {
-		metric, err := parseLine(line)
+		metric, err := parseLine(line, sanitizeBucketNames)
 
 		if err != nil {
 			errors = append(errors, err)
@@ -25,7 +25,7 @@ func Parse(input string) ([]*metric.Metric, []error) {
 	return metrics, errors
 }
 
-func parseLine(line string) (*metric.Metric, error) {
+func parseLine(line string, sanitizeBucketNames bool) (*metric.Metric, error) {
 	if len(line) < 5 {
 		return nil, errors.New("Metric string is too short")
 	}
@@ -37,6 +37,11 @@ func parseLine(line string) (*metric.Metric, error) {
 	}
 
 	metricBucket := metricParts[0]
+
+	if sanitizeBucketNames {
+		metricBucket = sanitizeBucketName(metricBucket)
+	}
+
 	moreMetricParts := strings.Split(metricParts[1], "|")
 
 	if len(moreMetricParts) < 2 || len(moreMetricParts[0]) == 0 || len(moreMetricParts[1]) == 0 {
@@ -98,4 +103,26 @@ func parseLine(line string) (*metric.Metric, error) {
 	}
 
 	return &metric.Metric{Bucket: metricBucket, StringValue: metricStringValue, FloatValue: metricFloatValue, Type: metricType, DoesGaugeHaveOperation: DoesGaugeHaveOperation, Sampling: metricSampling}, nil
+}
+
+func sanitizeBucketName(bucket string) string {
+	res := make([]byte, len(bucket))
+	var resLength int
+
+	for i := 0; i < len(bucket); i++ {
+		c := bucket[i]
+		switch {
+		case (c >= byte('a') && c <= byte('z')) || (c >= byte('A') && c <= byte('Z')) || (c >= byte('0') && c <= byte('9')) || c == byte('-') || c == byte('.') || c == byte('_'):
+			res[resLength] = c
+			resLength++
+		case c == byte(' '):
+			res[resLength] = byte('_')
+			resLength++
+		case c == byte('/'):
+			res[resLength] = byte('-')
+			resLength++
+		}
+	}
+
+	return string(res[:resLength])
 }

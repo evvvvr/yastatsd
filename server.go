@@ -24,6 +24,7 @@ const (
 var (
 	udpServerAddress, tcpServerAddress *string
 	flushInterval                      *int
+	sanitizeBucketNames                *bool
 	debug                              *bool
 	errorCount                         = 0
 	metrics                            = metric.Metrics{Counters: make(map[string]float64),
@@ -39,7 +40,8 @@ func main() {
 	tcpServerAddress = flag.String("tcpAddr", "", "TCP server address")
 	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
-	debug = flag.Bool("debug", false, "Should print metric values on flush")
+	sanitizeBucketNames = flag.Bool("sanitizeBucketNames", false, "Sanitize bucket names")
+	debug = flag.Bool("debug", false, "Print metrics on flush")
 
 	flag.Parse()
 
@@ -151,7 +153,7 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 			break
 		}
 
-		metrics, errors := parser.Parse(string(buf[:numRead]))
+		metrics, errors := parser.Parse(string(buf[:numRead]), *sanitizeBucketNames)
 
 		for _, metric := range metrics {
 			incomingMetrics <- metric

@@ -16,7 +16,9 @@ var bigZero = big.NewFloat(0)
 func debugPrint(m *metric.CalculatedMetrics) {
 	var buf = bytes.NewBufferString("Counters:\n")
 
-	for bucket, counter := range m.Counters {
+	for _, bucket := range SortMapKeys(m.Counters) {
+		counter := m.Counters[bucket]
+
 		counterString := fmt.Sprintf("%s: value: %s, rate: %s\n",
 			bucket,
 			strconv.FormatFloat(counter.Value, 'f', -1, 64),
@@ -26,7 +28,9 @@ func debugPrint(m *metric.CalculatedMetrics) {
 	}
 
 	buf.WriteString("Timers:\n")
-	for bucket, timer := range m.Timers {
+	for _, bucket := range SortMapKeys(m.Timers) {
+		timer := m.Timers[bucket]
+
 		timerBuf := bytes.NewBufferString(fmt.Sprintf("%s: ", bucket))
 
 		timerPoints := make([]string, 0, len(timer.Points))
@@ -71,20 +75,18 @@ func debugPrint(m *metric.CalculatedMetrics) {
 	}
 
 	buf.WriteString("Gauges:\n")
-	for bucket, gauge := range m.Gauges {
+	for _, bucket := range SortMapKeys(m.Gauges) {
+		gauge := m.Gauges[bucket]
 		gaugeString := fmt.Sprintf("%s: %s\n", bucket, strconv.FormatFloat(gauge, 'f', -1, 64))
 		buf.WriteString(gaugeString)
 	}
 
 	buf.WriteString("Sets:\n")
-	for bucket, set := range m.Sets {
+	for _, bucket := range SortMapKeys(m.Sets) {
+		set := m.Sets[bucket]
 		buf.WriteString(fmt.Sprintf("%s: ", bucket))
 
-		keys := make([]string, 0, len(set))
-		for key := range set {
-			keys = append(keys, key)
-		}
-
+		keys := SortMapKeys(set)
 		buf.WriteString(strings.Join(keys, ", ") + "\n")
 	}
 
