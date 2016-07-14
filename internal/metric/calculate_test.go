@@ -41,14 +41,14 @@ func TestTimersCalculation(t *testing.T) {
 
 	timersCount := map[string]float64{"a.a": 6, "a.b": 12, "c": 0, "d": 1}
 
-	expectedLowers := map[string]float64{"a.a": 0.7, "a.b": 1, "c": 0, "d": 1.75}
-	expectedUppers := map[string]float64{"a.a": 3.1, "a.b": 0, "c": 0, "d": 1.75}
+	expectedLowers := map[string]float64{"a.a": 0.5, "a.b": 0, "c": 0, "d": 1.75}
+	expectedUppers := map[string]float64{"a.a": 3.1, "a.b": 2, "c": 0, "d": 1.75}
 	expectedCountsPerSecond := map[string]float64{"a.a": 0.6, "a.b": 1.2, "c": 0, "d": 0.1}
 	expectedSums := map[string]float64{"a.a": 4.3, "a.b": 4, "c": 0, "d": 1.75}
 	expectedMeans := map[string]float64{"a.a": 1.4333333333333333, "a.b": 1,
 		"c": 0, "d": 1.75}
 
-	expectedMedians := map[string]float64{"a.a": 0.5, "a.b": 1.5, "c": 0, "d": 1.75}
+	expectedMedians := map[string]float64{"a.a": 0.7, "a.b": 1, "c": 0, "d": 1.75}
 	expectedDeviations := map[string]float64{"a.a": 1.1813363431112902,
 		"a.b": 0.7071067811865476, "c": 0, "d": 0}
 
@@ -57,14 +57,14 @@ func TestTimersCalculation(t *testing.T) {
 		"a.a": map[float64]int{90: 3, -50: 2},
 		"a.b": map[float64]int{90: 4, -50: 2}}
 	expectedPctUppers := map[string]map[float64]float64{
-		"a.a": map[float64]float64{90: 3.1, -50: 0.5},
-		"a.b": map[float64]float64{90: 0, -50: 1}}
+		"a.a": map[float64]float64{90: 3.1, -50: 0.7},
+		"a.b": map[float64]float64{90: 2, -50: 1}}
 	expectedPctSums := map[string]map[float64]float64{
-		"a.a": map[float64]float64{90: 4.3, -50: 3.5999999999999996},
-		"a.b": map[float64]float64{90: 4, -50: 1}}
+		"a.a": map[float64]float64{90: 4.3, -50: 3.8},
+		"a.b": map[float64]float64{90: 4, -50: 3}}
 	expectedPctMeans := map[string]map[float64]float64{
-		"a.a": map[float64]float64{90: 1.4333333333333333, -50: 1.7999999999999998},
-		"a.b": map[float64]float64{90: 1, -50: 0.5}}
+		"a.a": map[float64]float64{90: 1.4333333333333333, -50: 1.9},
+		"a.b": map[float64]float64{90: 1, -50: 1.5}}
 
 	metrics := metric.Metrics{Timers: timers, TimersCount: timersCount}
 	calculatedTimers := metric.Calculate(&metrics, FLUSH_INTERVAL, percentiles).Timers

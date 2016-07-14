@@ -3,6 +3,7 @@ package metric
 import (
 	"math"
 	"math/big"
+	"sort"
 )
 
 var bigZero = big.NewFloat(0)
@@ -52,6 +53,7 @@ func Calculate(m *Metrics, flushInterval int, percentiles []float64) *Calculated
 
 	for bucket, timer := range m.Timers {
 		points := timer
+		sort.Float64s(points)
 		seen := len(points)
 
 		if seen > 0 {
