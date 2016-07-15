@@ -27,6 +27,7 @@ const (
 var (
 	udpServerAddress, tcpServerAddress *string
 	flushInterval                      *int
+	graphiteAddress                    *string
 	sanitizeBucketNames                *bool
 	deleteCounters                     *bool
 	deleteTimers                       *bool
@@ -46,6 +47,7 @@ func main() {
 	tcpServerAddress = flag.String("tcpAddr", "", "TCP server address")
 	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		"Metrics flush interval (milliseconds)")
+	graphiteAddress = flag.String("graphiteAddress", "", "Graphite server address.")
 	sanitizeBucketNames = flag.Bool("sanitizeBucketNames", true, "Sanitize bucket names")
 	deleteCounters = flag.Bool("deleteCounters", false, "Don't send values for inactive counters, as opposed to sending 0.")
 	deleteTimers = flag.Bool("deleteTimers", false, "Don't send values for inactive timers, as opposed to sending 0.")
@@ -73,7 +75,8 @@ func main() {
 }
 
 func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
-	flushTicker := time.NewTicker(time.Duration(*flushInterval) * time.Millisecond)
+	flushIntervalDuration := time.Duration(*flushInterval) * time.Millisecond
+	flushTicker := time.NewTicker(flushIntervalDuration)
 
 	for {
 		select {
@@ -83,7 +86,9 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 		case <-flushTicker.C:
 			calculatedMetrics := metric.Calculate(&metrics, *flushInterval, percentiles)
 
-			flushMetrics()
+			if *graphiteAddress != "" {
+				flushMetrics(flushIntervalDuration, calculatedMetrics, *graphiteAddress)
+			}
 
 			if *debug {
 				debugPrint(calculatedMetrics)
@@ -222,10 +227,6 @@ func saveMetric(m *metric.Metric) {
 
 		metrics.Sets[m.Bucket][m.StringValue] = struct{}{}
 	}
-}
-
-func flushMetrics() {
-	log.Printf("Flushing metrics.")
 }
 
 func resetMetrics() {
