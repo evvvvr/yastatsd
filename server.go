@@ -19,6 +19,9 @@ const (
 	MAX_READ_SIZE                       = 65535
 	DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
 	DEFAULT_TIMER_CAPACITY              = 100
+	PACKETS_RECIEVED_COUNTER            = "packets_recieved"
+	METRICS_RECIEVED_COUNTER            = "metrics_recieved"
+	ERRORS_COUNTER                      = "bad_lines_seen"
 )
 
 var (
@@ -30,7 +33,6 @@ var (
 	deleteGauges                       *bool
 	deleteSets                         *bool
 	debug                              *bool
-	errorCount                         = 0
 	metrics                            = metric.Metrics{Counters: make(map[string]float64),
 		Timers:      make(map[string][]float64),
 		TimersCount: make(map[string]float64),
@@ -56,27 +58,27 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt)
 
 	incomingMetrics := make(chan *metric.Metric, MAX_UNPROCESSED_INCOMING_METRICS)
-	errorsChan := make(chan *error, MAX_UNPROCESSED_INCOMING_METRICS)
 
-	go udpListener(incomingMetrics, errorsChan)
+	metrics.Counters[PACKETS_RECIEVED_COUNTER] = 0
+	metrics.Counters[METRICS_RECIEVED_COUNTER] = 0
+	metrics.Counters[ERRORS_COUNTER] = 0
+
+	go udpListener(incomingMetrics)
 
 	if *tcpServerAddress != "" {
-		go tcpListener(incomingMetrics, errorsChan)
+		go tcpListener(incomingMetrics)
 	}
 
-	mainLoop(incomingMetrics, errorsChan, sigChan)
+	mainLoop(incomingMetrics, sigChan)
 }
 
-func mainLoop(incomingMetrics <-chan *metric.Metric, errors <-chan *error, signal <-chan os.Signal) {
+func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 	flushTicker := time.NewTicker(time.Duration(*flushInterval) * time.Millisecond)
 
 	for {
 		select {
 		case metric := <-incomingMetrics:
 			saveMetric(metric)
-
-		case <-errors:
-			errorCount++
 
 		case <-flushTicker.C:
 			calculatedMetrics := metric.Calculate(&metrics, *flushInterval, percentiles)
@@ -96,7 +98,7 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, errors <-chan *error, signa
 	}
 }
 
-func udpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
+func udpListener(incomingMetrics chan<- *metric.Metric) {
 	udpAddr, err := net.ResolveUDPAddr("udp", *udpServerAddress)
 
 	if err != nil {
@@ -113,10 +115,10 @@ func udpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
 
 	log.Printf("Listening for UDP connections on %s", udpAddr)
 
-	readMetrics(udpConn, incomingMetrics, errors)
+	readMetrics(udpConn, incomingMetrics)
 }
 
-func tcpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
+func tcpListener(incomingMetrics chan<- *metric.Metric) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", *tcpServerAddress)
 
 	if err != nil {
@@ -140,11 +142,11 @@ func tcpListener(incomingMetrics chan<- *metric.Metric, errors chan<- *error) {
 			log.Fatalf("Error accepting TCP connection: %s", err)
 		}
 
-		go readMetrics(tcpConn, incomingMetrics, errors)
+		go readMetrics(tcpConn, incomingMetrics)
 	}
 }
 
-func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, errorsChan chan<- *error) {
+func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric) {
 	defer src.Close()
 
 	buf := make([]byte, MAX_READ_SIZE)
@@ -160,14 +162,14 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric, error
 			break
 		}
 
-		metrics, errors := parser.Parse(string(buf[:numRead]), *sanitizeBucketNames)
+		metrics.Counters[PACKETS_RECIEVED_COUNTER]++
+		parsedMetrics, errors := parser.Parse(string(buf[:numRead]), *sanitizeBucketNames)
 
-		for _, metric := range metrics {
+		metrics.Counters[METRICS_RECIEVED_COUNTER] += float64(len(parsedMetrics))
+		metrics.Counters[ERRORS_COUNTER] += float64(len(errors))
+
+		for _, metric := range parsedMetrics {
 			incomingMetrics <- metric
-		}
-
-		for _, error := range errors {
-			errorsChan <- &error
 		}
 	}
 }
@@ -223,14 +225,16 @@ func saveMetric(m *metric.Metric) {
 }
 
 func flushMetrics() {
-	log.Printf("Flushing metrics. Error count is %d\n", errorCount)
+	log.Printf("Flushing metrics.")
 }
 
 func resetMetrics() {
-	errorCount = 0
-
 	if *deleteCounters {
 		metrics.Counters = make(map[string]float64)
+
+		metrics.Counters[PACKETS_RECIEVED_COUNTER] = 0
+		metrics.Counters[METRICS_RECIEVED_COUNTER] = 0
+		metrics.Counters[ERRORS_COUNTER] = 0
 	} else {
 		setMetricsToZeroes(metrics.Counters)
 	}
