@@ -1,0 +1,1 @@
+Yeat Another [*Statsd*](https://github.com/etsy/statsd) implementation
