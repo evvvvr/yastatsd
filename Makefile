@@ -1,3 +1,5 @@
+PROJECT_DIRS = $(shell glide novendor)
+
 all: clean fmt test build
 
 build:
@@ -7,7 +9,7 @@ clean:
 	go clean
 
 test:
-	go test ./...
+	go test $(PROJECT_DIRS)
 
 fmt:
-	go fmt ./...
+	go fmt $(PROJECT_DIRS)

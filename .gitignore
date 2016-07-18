@@ -1,4 +1,8 @@
-yastatsd
+/yastatsd
+/config.yaml
 
-yastatsd.sublime-project
-yastatsd.sublime-workspace
+/glide.lock
+/vendor
+
+/yastatsd.sublime-project
+/yastatsd.sublime-workspace

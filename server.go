@@ -1,8 +1,8 @@
 package main
 
 import (
-	"flag"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -11,13 +11,27 @@ import (
 
 	"github.com/evvvvr/yastatsd/internal/metric"
 	"github.com/evvvvr/yastatsd/internal/parser"
+	"github.com/go-yaml/yaml"
 )
+
+type Config struct {
+	UdpServerAddress    string
+	TcpServerAddress    string
+	FlushInterval       int
+	GraphiteAddress     string
+	SanitizeBucketNames bool
+	DeleteCounters      bool
+	DeleteTimers        bool
+	DeleteGauges        bool
+	DeleteSets          bool
+	Debug               bool
+}
 
 const (
 	DEFAULT_UDP_ADDRESS                 = ":8125"
+	DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
 	MAX_UNPROCESSED_INCOMING_METRICS    = 1000
 	MAX_READ_SIZE                       = 65535
-	DEFAULT_FLUSH_INTERVAL_MILLISECONDS = 10000
 	DEFAULT_TIMER_CAPACITY              = 100
 	PACKETS_RECIEVED_COUNTER            = "packets_recieved"
 	METRICS_RECIEVED_COUNTER            = "metrics_recieved"
@@ -25,36 +39,33 @@ const (
 )
 
 var (
-	udpServerAddress, tcpServerAddress *string
-	flushInterval                      *int
-	graphiteAddress                    *string
-	sanitizeBucketNames                *bool
-	deleteCounters                     *bool
-	deleteTimers                       *bool
-	deleteGauges                       *bool
-	deleteSets                         *bool
-	debug                              *bool
-	metrics                            = metric.Metrics{Counters: make(map[string]float64),
+	config = Config{
+		UdpServerAddress:    DEFAULT_UDP_ADDRESS,
+		TcpServerAddress:    "",
+		FlushInterval:       DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
+		GraphiteAddress:     "",
+		SanitizeBucketNames: true}
+
+	metrics = metric.Metrics{
+		Counters:    make(map[string]float64),
 		Timers:      make(map[string][]float64),
 		TimersCount: make(map[string]float64),
 		Gauges:      make(map[string]float64),
 		Sets:        make(map[string]map[string]struct{})}
+
 	percentiles = []float64{90.0}
 )
 
 func main() {
-	udpServerAddress = flag.String("udpAddr", DEFAULT_UDP_ADDRESS, "UDP server address.")
-	tcpServerAddress = flag.String("tcpAddr", "", "TCP server address")
-	flushInterval = flag.Int("flushInterval", DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
-		"Metrics flush interval (milliseconds)")
-	graphiteAddress = flag.String("graphiteAddress", "", "Graphite server address.")
-	sanitizeBucketNames = flag.Bool("sanitizeBucketNames", true, "Sanitize bucket names")
-	deleteCounters = flag.Bool("deleteCounters", false, "Don't send values for inactive counters, as opposed to sending 0.")
-	deleteTimers = flag.Bool("deleteTimers", false, "Don't send values for inactive timers, as opposed to sending 0.")
-	deleteGauges = flag.Bool("deleteGauges", false, "Sanitize bucket names.")
-	deleteSets = flag.Bool("deleteSets", false, "Don't send values for inactive sets, as opposed to sending 0.")
-	debug = flag.Bool("debug", false, "Print metrics on flush.")
-	flag.Parse()
+	configFile, err := ioutil.ReadFile("config.yaml")
+	if err != nil {
+		log.Fatalf("Error reading config file: %s", err)
+	}
+
+	err = yaml.Unmarshal(configFile, &config)
+	if err != nil {
+		log.Fatalf("Error reading config file: %s", err)
+	}
 
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt)
@@ -67,7 +78,7 @@ func main() {
 
 	go udpListener(incomingMetrics)
 
-	if *tcpServerAddress != "" {
+	if config.TcpServerAddress != "" {
 		go tcpListener(incomingMetrics)
 	}
 
@@ -75,7 +86,7 @@ func main() {
 }
 
 func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
-	flushIntervalDuration := time.Duration(*flushInterval) * time.Millisecond
+	flushIntervalDuration := time.Duration(config.FlushInterval) * time.Millisecond
 	flushTicker := time.NewTicker(flushIntervalDuration)
 
 	for {
@@ -84,13 +95,13 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 			saveMetric(metric)
 
 		case <-flushTicker.C:
-			calculatedMetrics := metric.Calculate(&metrics, *flushInterval, percentiles)
+			calculatedMetrics := metric.Calculate(&metrics, config.FlushInterval, percentiles)
 
-			if *graphiteAddress != "" {
-				flushMetrics(flushIntervalDuration, calculatedMetrics, *graphiteAddress)
+			if config.GraphiteAddress != "" {
+				flushMetrics(flushIntervalDuration, calculatedMetrics, config.GraphiteAddress)
 			}
 
-			if *debug {
+			if config.Debug {
 				debugPrint(calculatedMetrics)
 			}
 
@@ -104,7 +115,7 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 }
 
 func udpListener(incomingMetrics chan<- *metric.Metric) {
-	udpAddr, err := net.ResolveUDPAddr("udp", *udpServerAddress)
+	udpAddr, err := net.ResolveUDPAddr("udp", config.UdpServerAddress)
 
 	if err != nil {
 		log.Fatalf("Error resolving UDP server address: %s", err)
@@ -124,7 +135,7 @@ func udpListener(incomingMetrics chan<- *metric.Metric) {
 }
 
 func tcpListener(incomingMetrics chan<- *metric.Metric) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", *tcpServerAddress)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", config.TcpServerAddress)
 
 	if err != nil {
 		log.Fatalf("Error resolving TCP server address: %s", err)
@@ -168,7 +179,7 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric) {
 		}
 
 		metrics.Counters[PACKETS_RECIEVED_COUNTER]++
-		parsedMetrics, errors := parser.Parse(string(buf[:numRead]), *sanitizeBucketNames)
+		parsedMetrics, errors := parser.Parse(string(buf[:numRead]), config.SanitizeBucketNames)
 
 		metrics.Counters[METRICS_RECIEVED_COUNTER] += float64(len(parsedMetrics))
 		metrics.Counters[ERRORS_COUNTER] += float64(len(errors))
@@ -230,7 +241,7 @@ func saveMetric(m *metric.Metric) {
 }
 
 func resetMetrics() {
-	if *deleteCounters {
+	if config.DeleteCounters {
 		metrics.Counters = make(map[string]float64)
 
 		metrics.Counters[PACKETS_RECIEVED_COUNTER] = 0
@@ -240,7 +251,7 @@ func resetMetrics() {
 		setMetricsToZeroes(metrics.Counters)
 	}
 
-	if *deleteTimers {
+	if config.DeleteTimers {
 		metrics.Timers = make(map[string][]float64)
 	} else {
 		for bucket, _ := range metrics.Timers {
@@ -248,11 +259,11 @@ func resetMetrics() {
 		}
 	}
 
-	if *deleteGauges {
+	if config.DeleteGauges {
 		metrics.Gauges = make(map[string]float64)
 	}
 
-	if *deleteSets {
+	if config.DeleteSets {
 		metrics.Sets = make(map[string]map[string]struct{})
 	} else {
 		for bucket, _ := range metrics.Sets {
