@@ -24,10 +24,11 @@ type Config struct {
 	GraphiteIPV6        bool   `yaml:"graphiteIPV6"`
 	PrefixStats         string `yaml:"prefixStats"`
 	SanitizeBucketNames bool   `yaml:"sanitizeBucketNames"`
-	DeleteCounters      bool   `yaml:"deleteCounters"`
-	DeleteTimers        bool   `yaml:"deleteTimers"`
-	DeleteGauges        bool   `yaml:"deleteGauges"`
-	DeleteSets          bool   `yaml:"deleteSets"`
+	Percentiles         []float64
+	DeleteCounters      bool `yaml:"deleteCounters"`
+	DeleteTimers        bool `yaml:"deleteTimers"`
+	DeleteGauges        bool `yaml:"deleteGauges"`
+	DeleteSets          bool `yaml:"deleteSets"`
 	Debug               bool
 }
 
@@ -49,9 +50,8 @@ var (
 		FlushInterval:       DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		GraphiteAddress:     "",
 		PrefixStats:         "statsd",
-		SanitizeBucketNames: true}
-
-	percentiles = []float64{90.0}
+		SanitizeBucketNames: true,
+		Percentiles:         []float64{90.0}}
 
 	metrics = metric.Metrics{
 		Counters:    make(map[string]float64),
@@ -109,7 +109,7 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 			saveMetric(metric)
 
 		case <-flushTicker.C:
-			calculatedMetrics := metric.Calculate(&metrics, config.FlushInterval, percentiles)
+			calculatedMetrics := metric.Calculate(&metrics, config.FlushInterval, config.Percentiles)
 
 			if config.GraphiteAddress != "" {
 				if config.Debug {
