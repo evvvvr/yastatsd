@@ -15,15 +15,16 @@ import (
 )
 
 type Config struct {
-	UdpServerAddress    string
-	TcpServerAddress    string
-	FlushInterval       int
-	GraphiteAddress     string
-	SanitizeBucketNames bool
-	DeleteCounters      bool
-	DeleteTimers        bool
-	DeleteGauges        bool
-	DeleteSets          bool
+	UdpServerAddress    string `yaml:"udpServerAddress"`
+	TcpServerAddress    string `yaml:"tcpServerAddress"`
+	FlushInterval       int    `yaml:"flushInterval"`
+	GraphiteAddress     string `yaml:"graphiteAddress"`
+	GraphiteIPV6        bool   `yaml:"graphiteIPV6"`
+	SanitizeBucketNames bool   `yaml:"sanitizeBucketNames"`
+	DeleteCounters      bool   `yaml:"deleteCounters"`
+	DeleteTimers        bool   `yaml:"deleteTimers"`
+	DeleteGauges        bool   `yaml:"deleteGauges"`
+	DeleteSets          bool   `yaml:"deleteSets"`
 	Debug               bool
 }
 
@@ -98,7 +99,11 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 			calculatedMetrics := metric.Calculate(&metrics, config.FlushInterval, percentiles)
 
 			if config.GraphiteAddress != "" {
-				flushMetrics(flushIntervalDuration, calculatedMetrics, config.GraphiteAddress)
+				if config.Debug {
+					log.Printf("Flushing metrics to Graphite server: %s", config.GraphiteAddress)
+				}
+
+				flushMetrics(flushIntervalDuration, calculatedMetrics, config.GraphiteIPV6, config.GraphiteAddress)
 			}
 
 			if config.Debug {

@@ -13,7 +13,7 @@ import (
 	"github.com/evvvvr/yastatsd/internal/metric"
 )
 
-func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteAddress string) {
+func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteIPV6 bool, graphiteAddress string) {
 	var buf *bytes.Buffer = bytes.NewBuffer([]byte{})
 	ts := time.Now().Unix()
 
@@ -72,7 +72,12 @@ func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteA
 		fmt.Fprintf(buf, "%s %d %d\n", bucket, len(set), ts)
 	}
 
-	client, err := net.Dial("tcp", graphiteAddress)
+	network := "tcp"
+	if graphiteIPV6 {
+		network = "tcp6"
+	}
+
+	client, err := net.Dial(network, graphiteAddress)
 	if err != nil {
 		log.Printf("Error connecting Graphite server %s - %s", graphiteAddress, err)
 		return
