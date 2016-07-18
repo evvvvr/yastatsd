@@ -1,1 +1,1 @@
-Yeat Another [*Statsd*](https://github.com/etsy/statsd) implementation
+Yet Another [*Statsd*](https://github.com/etsy/statsd) implementation
