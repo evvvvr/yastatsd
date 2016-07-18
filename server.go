@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -9,9 +10,10 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/go-yaml/yaml"
+
 	"github.com/evvvvr/yastatsd/internal/metric"
 	"github.com/evvvvr/yastatsd/internal/parser"
-	"github.com/go-yaml/yaml"
 )
 
 type Config struct {
@@ -20,6 +22,7 @@ type Config struct {
 	FlushInterval       int    `yaml:"flushInterval"`
 	GraphiteAddress     string `yaml:"graphiteAddress"`
 	GraphiteIPV6        bool   `yaml:"graphiteIPV6"`
+	PrefixStats         string `yaml:"prefixStats"`
 	SanitizeBucketNames bool   `yaml:"sanitizeBucketNames"`
 	DeleteCounters      bool   `yaml:"deleteCounters"`
 	DeleteTimers        bool   `yaml:"deleteTimers"`
@@ -45,7 +48,10 @@ var (
 		TcpServerAddress:    "",
 		FlushInterval:       DEFAULT_FLUSH_INTERVAL_MILLISECONDS,
 		GraphiteAddress:     "",
+		PrefixStats:         "statsd",
 		SanitizeBucketNames: true}
+
+	percentiles = []float64{90.0}
 
 	metrics = metric.Metrics{
 		Counters:    make(map[string]float64),
@@ -54,7 +60,9 @@ var (
 		Gauges:      make(map[string]float64),
 		Sets:        make(map[string]map[string]struct{})}
 
-	percentiles = []float64{90.0}
+	packetsRecievedCounter string
+	metricsRecievedCounter string
+	errorsCounter          string
 )
 
 func main() {
@@ -68,14 +76,18 @@ func main() {
 		log.Fatalf("Error reading config file: %s", err)
 	}
 
+	packetsRecievedCounter := processBucketName(PACKETS_RECIEVED_COUNTER)
+	metricsRecievedCounter := processBucketName(METRICS_RECIEVED_COUNTER)
+	errorsCounter := processBucketName(ERRORS_COUNTER)
+
 	sigChan := make(chan os.Signal)
 	signal.Notify(sigChan, os.Interrupt)
 
 	incomingMetrics := make(chan *metric.Metric, MAX_UNPROCESSED_INCOMING_METRICS)
 
-	metrics.Counters[PACKETS_RECIEVED_COUNTER] = 0
-	metrics.Counters[METRICS_RECIEVED_COUNTER] = 0
-	metrics.Counters[ERRORS_COUNTER] = 0
+	metrics.Counters[packetsRecievedCounter] = 0
+	metrics.Counters[metricsRecievedCounter] = 0
+	metrics.Counters[errorsCounter] = 0
 
 	go udpListener(incomingMetrics)
 
@@ -93,6 +105,7 @@ func mainLoop(incomingMetrics <-chan *metric.Metric, signal <-chan os.Signal) {
 	for {
 		select {
 		case metric := <-incomingMetrics:
+			metric.Bucket = processBucketName(metric.Bucket)
 			saveMetric(metric)
 
 		case <-flushTicker.C:
@@ -183,16 +196,50 @@ func readMetrics(src io.ReadCloser, incomingMetrics chan<- *metric.Metric) {
 			break
 		}
 
-		metrics.Counters[PACKETS_RECIEVED_COUNTER]++
-		parsedMetrics, errors := parser.Parse(string(buf[:numRead]), config.SanitizeBucketNames)
+		metrics.Counters[packetsRecievedCounter]++
+		parsedMetrics, errors := parser.Parse(string(buf[:numRead]))
 
-		metrics.Counters[METRICS_RECIEVED_COUNTER] += float64(len(parsedMetrics))
-		metrics.Counters[ERRORS_COUNTER] += float64(len(errors))
+		metrics.Counters[metricsRecievedCounter] += float64(len(parsedMetrics))
+		metrics.Counters[errorsCounter] += float64(len(errors))
 
 		for _, metric := range parsedMetrics {
 			incomingMetrics <- metric
 		}
 	}
+}
+
+func processBucketName(bucket string) string {
+	if config.SanitizeBucketNames {
+		bucket = sanitizeBucketName(bucket)
+	}
+
+	if config.PrefixStats != "" {
+		bucket = fmt.Sprintf("%s.%s", config.PrefixStats, bucket)
+	}
+
+	return bucket
+}
+
+func sanitizeBucketName(bucket string) string {
+	res := make([]byte, len(bucket))
+	var resLength int
+
+	for i := 0; i < len(bucket); i++ {
+		c := bucket[i]
+		switch {
+		case (c >= byte('a') && c <= byte('z')) || (c >= byte('A') && c <= byte('Z')) || (c >= byte('0') && c <= byte('9')) || c == byte('-') || c == byte('.') || c == byte('_'):
+			res[resLength] = c
+			resLength++
+		case c == byte(' '):
+			res[resLength] = byte('_')
+			resLength++
+		case c == byte('/'):
+			res[resLength] = byte('-')
+			resLength++
+		}
+	}
+
+	return string(res[:resLength])
 }
 
 func saveMetric(m *metric.Metric) {
@@ -249,9 +296,9 @@ func resetMetrics() {
 	if config.DeleteCounters {
 		metrics.Counters = make(map[string]float64)
 
-		metrics.Counters[PACKETS_RECIEVED_COUNTER] = 0
-		metrics.Counters[METRICS_RECIEVED_COUNTER] = 0
-		metrics.Counters[ERRORS_COUNTER] = 0
+		metrics.Counters[packetsRecievedCounter] = 0
+		metrics.Counters[metricsRecievedCounter] = 0
+		metrics.Counters[errorsCounter] = 0
 	} else {
 		setMetricsToZeroes(metrics.Counters)
 	}
