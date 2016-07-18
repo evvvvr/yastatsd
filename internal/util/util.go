@@ -1,10 +1,22 @@
-package main
+package util
 
 import (
 	"log"
+	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
 )
+
+var bigZero = big.NewFloat(0)
+
+func CmpToZero(f float64) int {
+	return big.NewFloat(f).Cmp(bigZero)
+}
+
+func FormatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
 
 func SortMapKeys(m interface{}) []string {
 	v := reflect.ValueOf(m)

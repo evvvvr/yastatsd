@@ -2,11 +2,10 @@ package metric
 
 import (
 	"math"
-	"math/big"
 	"sort"
-)
 
-var bigZero = big.NewFloat(0)
+	"github.com/evvvvr/yastatsd/internal/util"
+)
 
 type CalculatedMetrics struct {
 	Counters map[string]CounterData
@@ -103,7 +102,7 @@ func Calculate(m *Metrics, flushInterval int, percentiles []float64) *Calculated
 						continue
 					}
 
-					if big.NewFloat(percentile).Cmp(bigZero) > 0 {
+					if util.CmpToZero(percentile) > 0 {
 						pctUpper = points[pctCount-1]
 						pctSum = cumulativeValues[pctCount-1]
 					} else {

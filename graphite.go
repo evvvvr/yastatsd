@@ -4,13 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"math/big"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/evvvvr/yastatsd/internal/metric"
+	"github.com/evvvvr/yastatsd/internal/util"
 )
 
 func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteIPV6 bool, graphiteAddress string) {
@@ -18,21 +17,21 @@ func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteI
 	ts := time.Now().Unix()
 
 	for bucket, counter := range m.Counters {
-		valStr := strconv.FormatFloat(counter.Value, 'f', -1, 64)
-		rateStr := strconv.FormatFloat(counter.Rate, 'f', -1, 64)
+		valStr := util.FormatFloat(counter.Value)
+		rateStr := util.FormatFloat(counter.Rate)
 		fmt.Fprintf(buf, "%s.count %s %d\n", bucket, valStr, ts)
 		fmt.Fprintf(buf, "%s.rate %s %d\n", bucket, rateStr, ts)
 	}
 
 	for bucket, timer := range m.Timers {
-		lowerStr := strconv.FormatFloat(timer.Lower, 'f', -1, 64)
-		upperStr := strconv.FormatFloat(timer.Upper, 'f', -1, 64)
-		countStr := strconv.FormatFloat(timer.Count, 'f', -1, 64)
-		countPsStr := strconv.FormatFloat(timer.CountPerSecond, 'f', -1, 64)
-		sumStr := strconv.FormatFloat(timer.Sum, 'f', -1, 64)
-		meanStr := strconv.FormatFloat(timer.Mean, 'f', -1, 64)
-		medianStr := strconv.FormatFloat(timer.Median, 'f', -1, 64)
-		stdStr := strconv.FormatFloat(timer.StandardDeviation, 'f', -1, 64)
+		lowerStr := util.FormatFloat(timer.Lower)
+		upperStr := util.FormatFloat(timer.Upper)
+		countStr := util.FormatFloat(timer.Count)
+		countPsStr := util.FormatFloat(timer.CountPerSecond)
+		sumStr := util.FormatFloat(timer.Sum)
+		meanStr := util.FormatFloat(timer.Mean)
+		medianStr := util.FormatFloat(timer.Median)
+		stdStr := util.FormatFloat(timer.StandardDeviation)
 
 		fmt.Fprintf(buf, "%s.lower %s %d\n", bucket, lowerStr, ts)
 		fmt.Fprintf(buf, "%s.upper %s %d\n", bucket, upperStr, ts)
@@ -44,15 +43,15 @@ func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteI
 		fmt.Fprintf(buf, "%s.std %s %d\n", bucket, stdStr, ts)
 
 		for pct, pctData := range timer.PercentilesData {
-			pctStr := strconv.FormatFloat(pct, 'f', -1, 64)
+			pctStr := util.FormatFloat(pct)
 			pctStr = strings.Replace(strings.Replace(pctStr, ".", "_", -1), "-", "top", -1)
-			upperStr := strconv.FormatFloat(pctData.Upper, 'f', -1, 64)
-			sumStr := strconv.FormatFloat(pctData.Sum, 'f', -1, 64)
-			meanStr := strconv.FormatFloat(pctData.Mean, 'f', -1, 64)
+			upperStr := util.FormatFloat(pctData.Upper)
+			sumStr := util.FormatFloat(pctData.Sum)
+			meanStr := util.FormatFloat(pctData.Mean)
 
 			fmt.Fprintf(buf, "%s.count_%s %d %d\n", bucket, pctStr, pctData.Count, ts)
 
-			if big.NewFloat(pct).Cmp(bigZero) > 0 {
+			if util.CmpToZero(pct) > 0 {
 				fmt.Fprintf(buf, "%s.upper_%s %s %d\n", bucket, pctStr, upperStr, ts)
 			} else {
 				fmt.Fprintf(buf, "%s.lower_%s %s %d\n", bucket, pctStr, upperStr, ts)
@@ -64,7 +63,7 @@ func flushMetrics(deadline time.Duration, m *metric.CalculatedMetrics, graphiteI
 	}
 
 	for bucket, gauge := range m.Gauges {
-		valStr := strconv.FormatFloat(gauge, 'f', -1, 64)
+		valStr := util.FormatFloat(gauge)
 		fmt.Fprintf(buf, "%s %s %d\n", bucket, valStr, ts)
 	}
 

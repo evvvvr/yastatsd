@@ -3,7 +3,8 @@ package metric
 import (
 	"fmt"
 	"math/big"
-	"strconv"
+
+	"github.com/evvvvr/yastatsd/internal/util"
 )
 
 var one = big.NewFloat(1)
@@ -93,14 +94,14 @@ func (m *Metric) String() string {
 	if m.Type == Set {
 		valueString = m.StringValue
 	} else {
-		valueString = strconv.FormatFloat(m.FloatValue, 'f', -1, 64)
+		valueString = util.FormatFloat(m.FloatValue)
 	}
 
 	sampleString := ""
 	sampleValue := big.NewFloat(m.Sampling)
 
 	if (m.Type == Counter || m.Type == Timer) && (one.Cmp(sampleValue) != 0) {
-		sampleString = fmt.Sprintf("|@%s", strconv.FormatFloat(m.Sampling, 'f', -1, 64))
+		sampleString = fmt.Sprintf("|@%s", util.FormatFloat(m.Sampling))
 	}
 
 	return fmt.Sprintf("%s:%s|%s%s", m.Bucket, valueString, typeString, sampleString)
